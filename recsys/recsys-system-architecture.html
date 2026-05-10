@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>广告推荐系统架构 — 从数据到服务的完整 Pipeline</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f0f2f5;--card:#fff;--text:#1a1a2e;--text2:#555;--text3:#888;
+  --accent:#0984e3;--accent2:#6c5ce7;--border:#e0e0e0;
+  --code-bg:#1e272e;--code-text:#dfe6e9;
+  --recall:#00b894;--coarse:#fdcb6e;--fine:#e17055;--rerank:#6c5ce7;
+  --serve:#0984e3;--train:#d63031;--monitor:#a29bfe;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);line-height:1.75;padding:0}
+a{color:var(--accent);text-decoration:none}
+
+/* Top nav */
+.topnav{position:sticky;top:0;background:rgba(26,26,46,.95);backdrop-filter:blur(8px);padding:12px 32px;display:flex;align-items:center;gap:24px;z-index:100;overflow-x:auto;white-space:nowrap}
+.topnav-title{color:#fff;font-size:15px;font-weight:700;flex-shrink:0}
+.topnav a{color:rgba(255,255,255,.6);font-size:13px;padding:4px 12px;border-radius:4px;transition:all .15s}
+.topnav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+.topnav a.active{color:#74b9ff;background:rgba(116,185,255,.1)}
+
+/* Layout */
+.container{max-width:1060px;margin:0 auto;padding:32px 24px 80px}
+.card{background:var(--card);border-radius:var(--radius);padding:32px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid var(--border)}
+.section-tag{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:4px;color:#fff;font-weight:600;margin-bottom:8px}
+.insight{background:linear-gradient(135deg,#ebf5fb,#eaf2f8);border-left:4px solid var(--accent);border-radius:0 8px 8px 0;padding:16px 20px;margin:16px 0;font-size:14px}
+.formula-box{background:#fafbfc;border:1px solid var(--border);border-radius:8px;padding:20px;margin:16px 0;text-align:center;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:16px 0}
+th{background:#f8f9fa;font-weight:600;text-align:left;padding:10px 12px;border-bottom:2px solid var(--border)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:hover{background:#f8f9fa}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media(max-width:860px){.grid-2,.grid-3{grid-template-columns:1fr}}
+.mini-card{background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid var(--border)}
+.mini-card h4{font-size:14px;margin-bottom:6px}
+.mini-card p{font-size:13px;color:var(--text2)}
+.svg-container{display:flex;justify-content:center;margin:24px 0;overflow-x:auto}
+
+/* Pipeline step colors */
+.step-recall{border-left:4px solid var(--recall)}
+.step-coarse{border-left:4px solid var(--coarse)}
+.step-fine{border-left:4px solid var(--fine)}
+.step-rerank{border-left:4px solid var(--rerank)}
+.step-serve{border-left:4px solid var(--serve)}
+.step-train{border-left:4px solid var(--train)}
+
+/* Hero */
+.hero{text-align:center;padding:48px 0 32px}
+.hero h1{font-size:32px;font-weight:800;background:linear-gradient(135deg,var(--recall),var(--fine),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{color:var(--text2);font-size:15px;margin-top:10px;max-width:640px;margin-left:auto;margin-right:auto}
+
+/* Interactive pipeline */
+.pipeline{display:flex;align-items:center;justify-content:center;gap:0;padding:20px 0;overflow-x:auto}
+.pipe-node{display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:transform .15s;min-width:90px}
+.pipe-node:hover{transform:translateY(-4px)}
+.pipe-icon{width:52px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700}
+.pipe-label{font-size:11px;font-weight:600;margin-top:6px;text-align:center}
+.pipe-sub{font-size:9px;color:var(--text3)}
+.pipe-arrow{font-size:20px;color:var(--border);margin:0 4px}
+
+/* Phase blocks */
+.phase{padding:20px;margin:12px 0;border-radius:8px;background:#fff}
+.phase h4{font-size:15px;font-weight:700;margin-bottom:8px}
+.phase p,.phase li{font-size:13px;color:var(--text2)}
+
+/* Code */
+pre{background:var(--code-bg);color:var(--code-text);padding:16px 20px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;font-family:'SF Mono','Fira Code',Consolas,monospace;margin:12px 0}
+.kw{color:#c792ea}.fn{color:#82aaff}.st{color:#c3e88d}.cm{color:#546e7a}.nu{color:#f78c6c}.op{color:#89ddff}.ty{color:#ffcb6b}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:16px}
+.tab{padding:8px 18px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Metric card */
+.metric{text-align:center;padding:16px;background:#f8f9fa;border-radius:8px;border:1px solid var(--border)}
+.metric-num{font-size:24px;font-weight:800;margin-bottom:2px}
+.metric-label{font-size:11px;color:var(--text3)}
+</style>
+</head>
+<body>
+
+<!-- Top nav -->
+<nav class="topnav">
+  <div class="topnav-title">系统架构</div>
+  <a href="#overview" class="active">总览</a>
+  <a href="#pipeline">Pipeline</a>
+  <a href="#recall">召回</a>
+  <a href="#ranking">排序</a>
+  <a href="#reranking">重排</a>
+  <a href="#training">训练</a>
+  <a href="#serving">在线服务</a>
+  <a href="#features">特征工程</a>
+  <a href="#monitoring">监控校准</a>
+  <a href="#models-map">模型映射</a>
+</nav>
+
+<div class="container">
+
+<!-- ==================== OVERVIEW ==================== -->
+<section id="overview">
+  <div class="hero">
+    <h1>广告推荐系统架构全景</h1>
+    <p>从请求到展示的完整链路。理解 FM/DeepFM/DIN/MMOE/PEPNet/DCN 在真实系统中的位置、数据流、训练与服务。</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:16px">系统全景图</h3>
+    <div class="svg-container">
+      <svg viewBox="0 0 900 520" width="900">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#555"/></marker>
+          <marker id="arr-g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#00b894"/></marker>
+          <marker id="arr-r" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d63031"/></marker>
+        </defs>
+
+        <!-- Title: Online Serving -->
+        <rect x="20" y="10" width="860" height="250" rx="12" fill="none" stroke="#0984e3" stroke-width="2" stroke-dasharray="6"/>
+        <text x="40" y="35" font-size="13" font-weight="700" fill="#0984e3">ONLINE SERVING (延迟 &lt; 100ms)</text>
+
+        <!-- Request -->
+        <rect x="40" y="60" width="80" height="50" rx="8" fill="#dfe6e9" stroke="#b2bec3"/>
+        <text x="80" y="82" text-anchor="middle" font-size="11" font-weight="600" fill="#333">广告请求</text>
+        <text x="80" y="98" text-anchor="middle" font-size="9" fill="#888">user + context</text>
+
+        <!-- Recall -->
+        <rect x="160" y="55" width="110" height="60" rx="8" fill="#e8f5e9" stroke="#00b894" stroke-width="2"/>
+        <text x="215" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="#00b894">召回 Recall</text>
+        <text x="215" y="95" text-anchor="middle" font-size="9" fill="#555">万级 → 千级</text>
+        <text x="215" y="108" text-anchor="middle" font-size="8" fill="#888">&lt;10ms</text>
+        <line x1="120" y1="85" x2="160" y2="85" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Coarse Rank -->
+        <rect x="310" y="55" width="110" height="60" rx="8" fill="#fff3e0" stroke="#fdcb6e" stroke-width="2"/>
+        <text x="365" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="#e17055">粗排 Pre-rank</text>
+        <text x="365" y="95" text-anchor="middle" font-size="9" fill="#555">千级 → 百级</text>
+        <text x="365" y="108" text-anchor="middle" font-size="8" fill="#888">&lt;15ms</text>
+        <line x1="270" y1="85" x2="310" y2="85" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Fine Rank -->
+        <rect x="460" y="55" width="120" height="60" rx="8" fill="#fce4ec" stroke="#e17055" stroke-width="2"/>
+        <text x="520" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="#d63031">精排 Rank</text>
+        <text x="520" y="95" text-anchor="middle" font-size="9" fill="#555">百级 → 十级</text>
+        <text x="520" y="108" text-anchor="middle" font-size="8" fill="#888">&lt;50ms (GPU)</text>
+        <line x1="420" y1="85" x2="460" y2="85" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Re-rank -->
+        <rect x="620" y="55" width="110" height="60" rx="8" fill="#f3f0ff" stroke="#6c5ce7" stroke-width="2"/>
+        <text x="675" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="#6c5ce7">重排 Re-rank</text>
+        <text x="675" y="95" text-anchor="middle" font-size="9" fill="#555">十级 → 展示</text>
+        <text x="675" y="108" text-anchor="middle" font-size="8" fill="#888">&lt;10ms</text>
+        <line x1="580" y1="85" x2="620" y2="85" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Response -->
+        <rect x="770" y="60" width="80" height="50" rx="8" fill="#0984e3"/>
+        <text x="810" y="82" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">广告展示</text>
+        <text x="810" y="98" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.8)">ranked ads</text>
+        <line x1="730" y1="85" x2="770" y2="85" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Feature Service -->
+        <rect x="280" y="140" width="320" height="50" rx="8" fill="#ebf5fb" stroke="#0984e3" stroke-width="1.5"/>
+        <text x="440" y="163" text-anchor="middle" font-size="12" font-weight="600" fill="#0984e3">Feature Service (Redis/Flink)</text>
+        <text x="440" y="180" text-anchor="middle" font-size="9" fill="#888">用户画像 + 实时行为 + 物品特征 + 上下文</text>
+        <line x1="365" y1="115" x2="400" y2="140" stroke="#0984e3" stroke-width="1" stroke-dasharray="3"/>
+        <line x1="520" y1="115" x2="470" y2="140" stroke="#0984e3" stroke-width="1" stroke-dasharray="3"/>
+
+        <!-- Model Service -->
+        <rect x="350" y="210" width="200" height="36" rx="6" fill="#fff" stroke="#e17055"/>
+        <text x="450" y="233" text-anchor="middle" font-size="11" font-weight="600" fill="#e17055">Model Serving (TF Serving / Triton)</text>
+        <line x1="520" y1="115" x2="450" y2="210" stroke="#e17055" stroke-width="1" stroke-dasharray="3"/>
+
+        <!-- ===== Offline ===== -->
+        <rect x="20" y="280" width="860" height="220" rx="12" fill="none" stroke="#d63031" stroke-width="2" stroke-dasharray="6"/>
+        <text x="40" y="305" font-size="13" font-weight="700" fill="#d63031">OFFLINE TRAINING & DATA PIPELINE</text>
+
+        <!-- Data Collection -->
+        <rect x="40" y="320" width="130" height="55" rx="8" fill="#fce4ec" stroke="#d63031"/>
+        <text x="105" y="343" text-anchor="middle" font-size="11" font-weight="600" fill="#d63031">日志收集</text>
+        <text x="105" y="360" text-anchor="middle" font-size="9" fill="#555">曝光/点击/转化</text>
+        <text x="105" y="373" text-anchor="middle" font-size="8" fill="#888">Kafka → HDFS</text>
+
+        <!-- Feature Engineering -->
+        <rect x="210" y="320" width="140" height="55" rx="8" fill="#fff3e0" stroke="#e17055"/>
+        <text x="280" y="343" text-anchor="middle" font-size="11" font-weight="600" fill="#e17055">特征工程</text>
+        <text x="280" y="360" text-anchor="middle" font-size="9" fill="#555">离线特征生成</text>
+        <text x="280" y="373" text-anchor="middle" font-size="8" fill="#888">Spark / Flink</text>
+        <line x1="170" y1="348" x2="210" y2="348" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Training -->
+        <rect x="390" y="320" width="140" height="55" rx="8" fill="#f3f0ff" stroke="#6c5ce7" stroke-width="2"/>
+        <text x="460" y="343" text-anchor="middle" font-size="11" font-weight="700" fill="#6c5ce7">模型训练</text>
+        <text x="460" y="360" text-anchor="middle" font-size="9" fill="#555">GPU 集群</text>
+        <text x="460" y="373" text-anchor="middle" font-size="8" fill="#888">TF / PyTorch</text>
+        <line x1="350" y1="348" x2="390" y2="348" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Evaluation -->
+        <rect x="570" y="320" width="130" height="55" rx="8" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="635" y="343" text-anchor="middle" font-size="11" font-weight="600" fill="#00b894">离线评估</text>
+        <text x="635" y="360" text-anchor="middle" font-size="9" fill="#555">AUC / GAUC / PCOC</text>
+        <text x="635" y="373" text-anchor="middle" font-size="8" fill="#888">Pass → Deploy</text>
+        <line x1="530" y1="348" x2="570" y2="348" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Deploy -->
+        <rect x="740" y="320" width="110" height="55" rx="8" fill="#0984e3"/>
+        <text x="795" y="343" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">模型部署</text>
+        <text x="795" y="360" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.8)">A/B Test</text>
+        <text x="795" y="373" text-anchor="middle" font-size="8" fill="rgba(255,255,255,.7)">灰度 → 全量</text>
+        <line x1="700" y1="348" x2="740" y2="348" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Monitoring -->
+        <rect x="300" y="410" width="300" height="50" rx="8" fill="#f8f9fa" stroke="#a29bfe" stroke-width="1.5"/>
+        <text x="450" y="433" text-anchor="middle" font-size="11" font-weight="600" fill="#a29bfe">监控 & 校准 (Monitoring & Calibration)</text>
+        <text x="450" y="450" text-anchor="middle" font-size="9" fill="#888">AUC 漂移检测 / PCOC 校准 / 归因窗口校正 / 实时报警</text>
+
+        <!-- Connect offline to online -->
+        <path d="M795,320 Q810,280 550,246" fill="none" stroke="#d63031" stroke-width="1.5" marker-end="url(#arr-r)"/>
+        <text x="700" y="275" font-size="9" fill="#d63031">模型热更新</text>
+
+        <!-- Feedback loop -->
+        <path d="M810,110 Q840,450 600,460" fill="none" stroke="#a29bfe" stroke-width="1" stroke-dasharray="4"/>
+        <text x="810" y="200" font-size="9" fill="#a29bfe" transform="rotate(90, 810, 200)">反馈回流</text>
+      </svg>
+    </div>
+
+    <div class="grid-3" style="margin-top:16px">
+      <div class="metric"><div class="metric-num" style="color:var(--recall)">~10ms</div><div class="metric-label">召回层延迟</div></div>
+      <div class="metric"><div class="metric-num" style="color:var(--fine)">~50ms</div><div class="metric-label">精排层延迟 (GPU)</div></div>
+      <div class="metric"><div class="metric-num" style="color:var(--accent)"><100ms</div><div class="metric-label">端到端 SLA</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== PIPELINE ==================== -->
+<section id="pipeline">
+  <div class="card">
+    <h3 style="margin-bottom:16px">排序 Pipeline: 漏斗架构</h3>
+    <p style="color:var(--text2);font-size:14px;margin-bottom:20px">广告系统采用多级漏斗架构。每一级在更少的候选上使用更精细的模型，在延迟和精度之间取得平衡。</p>
+
+    <div class="pipeline">
+      <div class="pipe-node" onclick="scrollTo('recall')">
+        <div class="pipe-icon" style="background:var(--recall)">R</div>
+        <div class="pipe-label">召回</div>
+        <div class="pipe-sub">10万 → 1000</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node" onclick="scrollTo('ranking')">
+        <div class="pipe-icon" style="background:var(--coarse)">C</div>
+        <div class="pipe-label">粗排</div>
+        <div class="pipe-sub">1000 → 200</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node" onclick="scrollTo('ranking')">
+        <div class="pipe-icon" style="background:var(--fine)">F</div>
+        <div class="pipe-label">精排</div>
+        <div class="pipe-sub">200 → 20</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node" onclick="scrollTo('reranking')">
+        <div class="pipe-icon" style="background:var(--rerank)">Re</div>
+        <div class="pipe-label">重排</div>
+        <div class="pipe-sub">20 → 展示</div>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>阶段</th><th>候选数量</th><th>延迟</th><th>模型复杂度</th><th>典型方法</th></tr></thead>
+      <tbody>
+        <tr><td style="color:var(--recall);font-weight:600">召回</td><td>10万 → 1000</td><td><10ms</td><td>轻量 (向量检索)</td><td>双塔/ANN/i2i/u2i</td></tr>
+        <tr><td style="color:var(--coarse);font-weight:600">粗排</td><td>1000 → 200</td><td><15ms</td><td>中等 (简化 DNN)</td><td>蒸馏模型/轻量 DeepFM</td></tr>
+        <tr><td style="color:var(--fine);font-weight:600">精排</td><td>200 → 20</td><td><50ms</td><td>复杂 (全量模型)</td><td>DeepFM/DIN/DCN/PLE+PEPNet</td></tr>
+        <tr><td style="color:var(--rerank);font-weight:600">重排</td><td>20 → 展示</td><td><10ms</td><td>策略 + 轻量模型</td><td>多样性/频控/竞价/校准</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ==================== RECALL ==================== -->
+<section id="recall">
+  <span class="section-tag" style="background:var(--recall)">Recall 召回层</span>
+  <div class="card">
+    <h3 style="margin-bottom:16px">召回层: 从海量到候选</h3>
+    <div class="insight">
+      召回层的目标是从百万级候选池中快速筛选出千级相关候选，核心指标是<strong>覆盖率 (Recall@K)</strong> 而非精度。要求延迟极低 (<10ms)，因此不能用复杂模型，通常采用向量检索 + 多路召回。
+    </div>
+
+    <div class="svg-container">
+      <svg viewBox="0 0 700 280" width="700">
+        <!-- Candidate pool -->
+        <rect x="20" y="100" width="100" height="80" rx="8" fill="#f8f9fa" stroke="#ddd"/>
+        <text x="70" y="130" text-anchor="middle" font-size="11" font-weight="600" fill="#333">候选池</text>
+        <text x="70" y="150" text-anchor="middle" font-size="10" fill="#888">100万+ 广告</text>
+        <text x="70" y="168" text-anchor="middle" font-size="9" fill="#aaa">索引化存储</text>
+
+        <!-- Multi-channel recall -->
+        <text x="260" y="30" text-anchor="middle" font-size="11" font-weight="600" fill="#00b894">多路召回 (并行)</text>
+
+        <rect x="170" y="45" width="90" height="40" rx="6" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="215" y="62" text-anchor="middle" font-size="10" font-weight="600" fill="#00b894">双塔 DNN</text>
+        <text x="215" y="78" text-anchor="middle" font-size="9" fill="#555">语义相似</text>
+
+        <rect x="280" y="45" width="90" height="40" rx="6" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="325" y="62" text-anchor="middle" font-size="10" font-weight="600" fill="#00b894">i2i 协同</text>
+        <text x="325" y="78" text-anchor="middle" font-size="9" fill="#555">Swing/ItemCF</text>
+
+        <rect x="170" y="100" width="90" height="40" rx="6" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="215" y="117" text-anchor="middle" font-size="10" font-weight="600" fill="#00b894">热门/新品</text>
+        <text x="215" y="133" text-anchor="middle" font-size="9" fill="#555">探索流量</text>
+
+        <rect x="280" y="100" width="90" height="40" rx="6" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="325" y="117" text-anchor="middle" font-size="10" font-weight="600" fill="#00b894">定向召回</text>
+        <text x="325" y="133" text-anchor="middle" font-size="9" fill="#555">广告主定向</text>
+
+        <rect x="170" y="155" width="200" height="40" rx="6" fill="#fff" stroke="#00b894" stroke-dasharray="3"/>
+        <text x="270" y="172" text-anchor="middle" font-size="10" fill="#00b894">向量索引: FAISS / Milvus / ScaNN</text>
+        <text x="270" y="188" text-anchor="middle" font-size="9" fill="#888">ANN 近似最近邻检索</text>
+
+        <!-- Connections -->
+        <line x1="120" y1="130" x2="170" y2="65" stroke="#aaa" stroke-width="1"/>
+        <line x1="120" y1="140" x2="170" y2="120" stroke="#aaa" stroke-width="1"/>
+
+        <!-- Merge -->
+        <rect x="430" y="90" width="100" height="50" rx="8" fill="#00b894"/>
+        <text x="480" y="112" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">合并去重</text>
+        <text x="480" y="130" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.8)">~1000 候选</text>
+        <line x1="370" y1="75" x2="430" y2="105" stroke="#aaa" stroke-width="1"/>
+        <line x1="370" y1="120" x2="430" y2="115" stroke="#aaa" stroke-width="1"/>
+
+        <!-- Output -->
+        <rect x="580" y="90" width="100" height="50" rx="8" fill="#f8f9fa" stroke="#00b894"/>
+        <text x="630" y="112" text-anchor="middle" font-size="11" font-weight="600" fill="#00b894">候选集</text>
+        <text x="630" y="130" text-anchor="middle" font-size="10" fill="#555">→ 粗排</text>
+        <line x1="530" y1="115" x2="580" y2="115" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Latency -->
+        <rect x="430" y="200" width="250" height="45" rx="6" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="555" y="220" text-anchor="middle" font-size="10" font-weight="600" fill="#00b894">关键指标</text>
+        <text x="555" y="238" text-anchor="middle" font-size="10" fill="#555">Recall@1000 > 95% | 延迟 < 10ms | QPS > 10K</text>
+      </svg>
+    </div>
+
+    <h3 style="margin:20px 0 12px">双塔模型 (Two-Tower)</h3>
+    <p style="font-size:14px;color:var(--text2)">用户塔和物品塔分别编码为向量，离线计算物品向量建索引，在线只需计算用户向量 + 向量检索。这是实现亚毫秒延迟的关键。</p>
+    <div class="formula-box">
+      $$\text{score}(u, i) = \langle f_{\text{user}}(\mathbf{x}_u), f_{\text{item}}(\mathbf{x}_i) \rangle$$
+      <p style="font-size:12px;color:var(--text3);margin-top:8px">两个塔必须完全独立，不能有交叉特征 — 否则无法预计算物品向量</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== RANKING ==================== -->
+<section id="ranking">
+  <span class="section-tag" style="background:var(--fine)">Ranking 排序层</span>
+  <div class="card">
+    <h3 style="margin-bottom:16px">粗排 + 精排: 模型的主战场</h3>
+    <div class="insight">
+      排序层是全部 CTR/CVR 模型的部署位置。粗排用轻量模型快速筛选，精排用全量模型精细打分。<strong>我们学习的 FM/DeepFM/DIN/DCN/MMOE/PLE/PEPNet 全部用在精排层。</strong>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(this, 'tab-coarse')">粗排 (Pre-Ranking)</div>
+      <div class="tab" onclick="switchTab(this, 'tab-fine')">精排 (Fine-Ranking)</div>
+    </div>
+
+    <div class="tab-content active" id="tab-coarse">
+      <div class="grid-2">
+        <div>
+          <h4 style="margin-bottom:8px">粗排的设计约束</h4>
+          <ul style="padding-left:20px;font-size:13px;color:var(--text2)">
+            <li>候选量 ~1000，延迟 < 15ms</li>
+            <li>模型必须轻量：双塔、浅层 DNN、知识蒸馏</li>
+            <li>不用复杂的注意力机制 (太慢)</li>
+            <li>目标：保留精排会选出的 Top 候选</li>
+          </ul>
+        </div>
+        <div class="mini-card">
+          <h4>常用方法</h4>
+          <p><strong>知识蒸馏：</strong>用精排模型的预测作为 soft label 训练轻量学生模型<br>
+          <strong>特征裁剪：</strong>只用 Top-K 重要特征<br>
+          <strong>模型简化：</strong>浅层 MLP、无序列特征</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-fine">
+      <h4 style="margin-bottom:12px">精排: 模型全家桶</h4>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:16px">精排层是模型能力的主战场。候选量 ~200，可以用 GPU 推理，模型复杂度不受限。</p>
+
+      <div class="svg-container">
+        <svg viewBox="0 0 700 200" width="700">
+          <!-- Base model -->
+          <rect x="40" y="80" width="120" height="50" rx="8" fill="#fce4ec" stroke="#d63031" stroke-width="1.5"/>
+          <text x="100" y="100" text-anchor="middle" font-size="11" font-weight="600" fill="#d63031">骨干网络</text>
+          <text x="100" y="118" text-anchor="middle" font-size="9" fill="#555">DeepFM / DCN-V2</text>
+
+          <!-- Behavior -->
+          <rect x="190" y="80" width="120" height="50" rx="8" fill="#fff3e0" stroke="#e17055" stroke-width="1.5"/>
+          <text x="250" y="100" text-anchor="middle" font-size="11" font-weight="600" fill="#e17055">行为建模</text>
+          <text x="250" y="118" text-anchor="middle" font-size="9" fill="#555">DIN / SIM</text>
+
+          <!-- MTL -->
+          <rect x="340" y="80" width="120" height="50" rx="8" fill="#e8f5e9" stroke="#00b894" stroke-width="1.5"/>
+          <text x="400" y="100" text-anchor="middle" font-size="11" font-weight="600" fill="#00b894">多任务框架</text>
+          <text x="400" y="118" text-anchor="middle" font-size="9" fill="#555">PLE / ESMM</text>
+
+          <!-- Personalization -->
+          <rect x="490" y="80" width="120" height="50" rx="8" fill="#f3f0ff" stroke="#6c5ce7" stroke-width="1.5"/>
+          <text x="550" y="100" text-anchor="middle" font-size="11" font-weight="600" fill="#6c5ce7">个性化</text>
+          <text x="550" y="118" text-anchor="middle" font-size="9" fill="#555">PEPNet</text>
+
+          <!-- Arrows -->
+          <line x1="160" y1="105" x2="190" y2="105" stroke="#aaa" stroke-width="1.5" marker-end="url(#arr)"/>
+          <line x1="310" y1="105" x2="340" y2="105" stroke="#aaa" stroke-width="1.5" marker-end="url(#arr)"/>
+          <line x1="460" y1="105" x2="490" y2="105" stroke="#aaa" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- Output -->
+          <rect x="40" y="20" width="570" height="30" rx="4" fill="#f8f9fa" stroke="#ddd"/>
+          <text x="325" y="40" text-anchor="middle" font-size="10" fill="#555">精排综合得分 = f(pCTR, pCVR, 时长预估, 负反馈预估) → eCPM 排序</text>
+          <line x1="325" y1="80" x2="325" y2="50" stroke="#aaa" stroke-width="1" stroke-dasharray="3"/>
+
+          <!-- Latency -->
+          <text x="650" y="105" text-anchor="middle" font-size="11" font-weight="700" fill="#d63031">&lt;50ms</text>
+          <text x="650" y="120" text-anchor="middle" font-size="9" fill="#888">GPU 推理</text>
+        </svg>
+      </div>
+
+      <h4 style="margin:16px 0 8px">精排模型的典型组合 (工业实践)</h4>
+      <table>
+        <thead><tr><th>组件</th><th>选型</th><th>作用</th></tr></thead>
+        <tbody>
+          <tr><td>特征交互</td><td>DCN-V2 Cross Network</td><td>显式高阶交叉</td></tr>
+          <tr><td>行为序列</td><td>DIN / SIM Attention</td><td>用户兴趣动态表示</td></tr>
+          <tr><td>多任务</td><td>PLE</td><td>CTR/CVR/时长多目标</td></tr>
+          <tr><td>个性化</td><td>PEPNet (EPNet+PPNet)</td><td>参数级千人千面</td></tr>
+          <tr><td>CVR 偏差</td><td>ESMM 全空间训练</td><td>消除样本选择偏差</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== RE-RANKING ==================== -->
+<section id="reranking">
+  <span class="section-tag" style="background:var(--rerank)">Re-Ranking 重排层</span>
+  <div class="card">
+    <h3 style="margin-bottom:16px">重排层: 从排序到展示</h3>
+    <div class="insight">
+      精排输出的 Top-20 候选还需要经过重排才能最终展示。重排层不再优化单个广告的 CTR，而是优化<strong>整页/整个列表</strong>的体验和收入。
+    </div>
+
+    <div class="grid-3">
+      <div class="mini-card">
+        <h4 style="color:var(--rerank)">多样性</h4>
+        <p>避免连续展示同一类别/广告主的广告。MMR (Maximal Marginal Relevance)、DPP (Determinantal Point Process)</p>
+      </div>
+      <div class="mini-card">
+        <h4 style="color:var(--rerank)">频次控制</h4>
+        <p>同一广告对同一用户的展示频次上限。过度曝光导致用户疲劳和负体验。</p>
+      </div>
+      <div class="mini-card">
+        <h4 style="color:var(--rerank)">竞价与定价</h4>
+        <p>GSP (广义二价) / VCG 机制。确保广告主激励兼容，平台收入最大化。</p>
+      </div>
+    </div>
+
+    <h3 style="margin:20px 0 12px">校准 (Calibration)</h3>
+    <p style="font-size:14px;color:var(--text2)">重排层还负责最终的预估值校准。精排输出的 pCTR/pCVR 可能存在系统性偏差，需要通过 Platt Scaling 或 Isotonic Regression 校准后才能用于出价和收费。</p>
+
+    <div class="formula-box">
+      $$\text{eCPM} = \text{pCTR}_{\text{calibrated}} \times \text{pCVR}_{\text{calibrated}} \times \text{target\_CPA}$$
+      <p style="font-size:12px;color:var(--text3);margin-top:8px">PCOC (Predicted/Observed CVR ratio) 应接近 1.0，否则广告主 ROI 失控</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== TRAINING ==================== -->
+<section id="training">
+  <span class="section-tag" style="background:var(--train)">Offline Training 离线训练</span>
+  <div class="card">
+    <h3 style="margin-bottom:16px">训练 Pipeline</h3>
+
+    <div class="svg-container">
+      <svg viewBox="0 0 700 200" width="700">
+        <!-- Steps -->
+        <rect x="20" y="60" width="100" height="60" rx="8" fill="#fce4ec" stroke="#d63031"/>
+        <text x="70" y="85" text-anchor="middle" font-size="11" font-weight="600" fill="#d63031">数据采集</text>
+        <text x="70" y="105" text-anchor="middle" font-size="9" fill="#555">Kafka→HDFS</text>
+
+        <rect x="150" y="60" width="100" height="60" rx="8" fill="#fff3e0" stroke="#e17055"/>
+        <text x="200" y="85" text-anchor="middle" font-size="11" font-weight="600" fill="#e17055">样本构造</text>
+        <text x="200" y="105" text-anchor="middle" font-size="9" fill="#555">Join+Label</text>
+
+        <rect x="280" y="60" width="100" height="60" rx="8" fill="#ebf5fb" stroke="#0984e3"/>
+        <text x="330" y="85" text-anchor="middle" font-size="11" font-weight="600" fill="#0984e3">特征生成</text>
+        <text x="330" y="105" text-anchor="middle" font-size="9" fill="#555">Spark/Flink</text>
+
+        <rect x="410" y="60" width="100" height="60" rx="8" fill="#f3f0ff" stroke="#6c5ce7" stroke-width="2"/>
+        <text x="460" y="85" text-anchor="middle" font-size="11" font-weight="700" fill="#6c5ce7">模型训练</text>
+        <text x="460" y="105" text-anchor="middle" font-size="9" fill="#555">GPU Cluster</text>
+
+        <rect x="540" y="60" width="100" height="60" rx="8" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="590" y="85" text-anchor="middle" font-size="11" font-weight="600" fill="#00b894">离线评估</text>
+        <text x="590" y="105" text-anchor="middle" font-size="9" fill="#555">AUC/GAUC</text>
+
+        <!-- Arrows -->
+        <line x1="120" y1="90" x2="150" y2="90" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="250" y1="90" x2="280" y2="90" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="380" y1="90" x2="410" y2="90" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="510" y1="90" x2="540" y2="90" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Schedule -->
+        <rect x="20" y="150" width="620" height="36" rx="6" fill="#f8f9fa" stroke="#ddd"/>
+        <text x="330" y="173" text-anchor="middle" font-size="11" fill="#555">训练频率: 全量日更新 (T+1) + 增量实时更新 (分钟级 Embedding)</text>
+      </svg>
+    </div>
+
+    <h3 style="margin:20px 0 12px">训练关键决策</h3>
+    <table>
+      <thead><tr><th>决策点</th><th>选项</th><th>工业实践</th></tr></thead>
+      <tbody>
+        <tr><td>训练模式</td><td>全量重训 vs 增量更新</td><td>通常两者结合：每日全量 + 实时增量 Embedding</td></tr>
+        <tr><td>样本窗口</td><td>用多长时间的数据</td><td>通常 7-14 天，太长会引入陈旧信号</td></tr>
+        <tr><td>负样本</td><td>曝光未点击 vs 随机采样</td><td>曝光未点击为主，可补充随机负样本</td></tr>
+        <tr><td>CVR Label</td><td>等待窗口长度</td><td>24h-72h，过短有假阴性，过长不新鲜</td></tr>
+        <tr><td>Loss 权重</td><td>多任务 Loss 加权</td><td>动态加权 (Uncertainty Weighting) 或 Pareto 优化</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:20px 0 12px">A/B 测试框架</h3>
+    <p style="font-size:14px;color:var(--text2)">模型上线必须经过严格的 A/B 测试：</p>
+    <div class="grid-2">
+      <div class="mini-card">
+        <h4>分流策略</h4>
+        <p>按 user_id hash 分桶，确保同一用户始终在同一实验组。流量通常分为 Control (现有模型) 和 Treatment (新模型)。</p>
+      </div>
+      <div class="mini-card">
+        <h4>核心指标</h4>
+        <p><strong>主指标：</strong>RPM (Revenue Per Mille), CVR, ARPU<br><strong>护栏指标：</strong>用户留存、负反馈率、广告主 ROI</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SERVING ==================== -->
+<section id="serving">
+  <span class="section-tag" style="background:var(--serve)">Online Serving 在线服务</span>
+  <div class="card">
+    <h3 style="margin-bottom:16px">在线推理架构</h3>
+
+    <div class="svg-container">
+      <svg viewBox="0 0 700 250" width="700">
+        <!-- Request flow -->
+        <rect x="20" y="90" width="80" height="50" rx="8" fill="#dfe6e9" stroke="#b2bec3"/>
+        <text x="60" y="112" text-anchor="middle" font-size="10" font-weight="600" fill="#333">Ad Request</text>
+        <text x="60" y="128" text-anchor="middle" font-size="8" fill="#888">HTTP/gRPC</text>
+
+        <!-- Ad Server -->
+        <rect x="130" y="70" width="120" height="90" rx="8" fill="#fff" stroke="#0984e3" stroke-width="2"/>
+        <text x="190" y="95" text-anchor="middle" font-size="12" font-weight="700" fill="#0984e3">Ad Server</text>
+        <text x="190" y="112" text-anchor="middle" font-size="9" fill="#555">协调层</text>
+        <text x="190" y="128" text-anchor="middle" font-size="9" fill="#555">Recall→Rank</text>
+        <text x="190" y="144" text-anchor="middle" font-size="9" fill="#555">→Rerank→Bid</text>
+        <line x1="100" y1="115" x2="130" y2="115" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Feature Service -->
+        <rect x="290" y="20" width="140" height="50" rx="8" fill="#ebf5fb" stroke="#0984e3"/>
+        <text x="360" y="42" text-anchor="middle" font-size="11" font-weight="600" fill="#0984e3">Feature Store</text>
+        <text x="360" y="58" text-anchor="middle" font-size="9" fill="#555">Redis Cluster (ms级)</text>
+        <line x1="250" y1="90" x2="290" y2="50" stroke="#0984e3" stroke-width="1" stroke-dasharray="3"/>
+
+        <!-- Model Service -->
+        <rect x="290" y="90" width="140" height="50" rx="8" fill="#fce4ec" stroke="#d63031" stroke-width="2"/>
+        <text x="360" y="112" text-anchor="middle" font-size="11" font-weight="700" fill="#d63031">Model Serving</text>
+        <text x="360" y="130" text-anchor="middle" font-size="9" fill="#555">TF Serving / Triton</text>
+        <line x1="250" y1="115" x2="290" y2="115" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- GPU -->
+        <rect x="460" y="90" width="80" height="50" rx="8" fill="#d63031"/>
+        <text x="500" y="112" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">GPU</text>
+        <text x="500" y="128" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.8)">T4/A10G</text>
+        <line x1="430" y1="115" x2="460" y2="115" stroke="#d63031" stroke-width="1.5"/>
+
+        <!-- Vector Index -->
+        <rect x="290" y="160" width="140" height="50" rx="8" fill="#e8f5e9" stroke="#00b894"/>
+        <text x="360" y="182" text-anchor="middle" font-size="11" font-weight="600" fill="#00b894">Vector Index</text>
+        <text x="360" y="198" text-anchor="middle" font-size="9" fill="#555">FAISS / Milvus (召回)</text>
+        <line x1="250" y1="140" x2="290" y2="180" stroke="#00b894" stroke-width="1" stroke-dasharray="3"/>
+
+        <!-- Response -->
+        <rect x="580" y="90" width="100" height="50" rx="8" fill="#0984e3"/>
+        <text x="630" y="112" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Ad Response</text>
+        <text x="630" y="128" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.8)">ranked ads</text>
+        <line x1="540" y1="115" x2="580" y2="115" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+      </svg>
+    </div>
+
+    <h3 style="margin:20px 0 12px">性能优化技巧</h3>
+    <div class="grid-2">
+      <div class="mini-card">
+        <h4>模型侧</h4>
+        <p><strong>Batch 推理：</strong>将多个候选打包成 batch 送 GPU<br>
+        <strong>量化：</strong>FP16/INT8 加速，精度损失 <0.1% AUC<br>
+        <strong>剪枝：</strong>移除低贡献特征和网络层<br>
+        <strong>知识蒸馏：</strong>大模型 → 小模型</p>
+      </div>
+      <div class="mini-card">
+        <h4>工程侧</h4>
+        <p><strong>预计算：</strong>物品 Embedding 离线计算，用户实时计算<br>
+        <strong>缓存：</strong>Feature Store 热数据在 Redis，冷数据降级<br>
+        <strong>异步：</strong>特征获取与模型推理流水线并行<br>
+        <strong>降级：</strong>GPU 超载时自动降级到 CPU 轻量模型</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== FEATURES ==================== -->
+<section id="features">
+  <span class="section-tag" style="background:#e17055">Feature Engineering 特征工程</span>
+  <div class="card">
+    <h3 style="margin-bottom:16px">特征体系</h3>
+    <div class="insight">
+      特征工程是排序模型效果的基石。好的特征往往比更复杂的模型架构带来更大的提升。广告系统的特征通常分为四大类。
+    </div>
+
+    <table>
+      <thead><tr><th>类别</th><th>来源</th><th>示例</th><th>更新频率</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>用户画像</strong></td>
+          <td>注册信息 + 行为聚合</td>
+          <td>年龄、性别、城市、兴趣标签、消费力</td>
+          <td>天级</td>
+        </tr>
+        <tr>
+          <td><strong>用户行为</strong></td>
+          <td>实时行为流</td>
+          <td>最近 50 次点击/购买序列、Session 内行为</td>
+          <td>实时 (Flink)</td>
+        </tr>
+        <tr>
+          <td><strong>物品/广告特征</strong></td>
+          <td>广告主上传 + 统计</td>
+          <td>类目、价格、品牌、历史 CTR/CVR、素材质量分</td>
+          <td>小时级</td>
+        </tr>
+        <tr>
+          <td><strong>上下文特征</strong></td>
+          <td>请求时生成</td>
+          <td>时间、地点、设备、网络、App 版本、页面位置</td>
+          <td>请求级</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:20px 0 12px">特征处理方式</h3>
+    <div class="grid-2">
+      <div class="mini-card">
+        <h4>类别特征 (Categorical)</h4>
+        <p>通过 Embedding 层映射为稠密向量。<br>Embedding 维度通常 8-64，取决于类别基数。<br>高基数特征 (如 user_id) 需要 hash 或频率截断。</p>
+      </div>
+      <div class="mini-card">
+        <h4>连续特征 (Continuous)</h4>
+        <p>标准化/分桶/对数变换。<br>有些系统将连续特征也离散化后走 Embedding。<br>常用分桶方式：等频、等距、自适应 (树模型分桶)。</p>
+      </div>
+    </div>
+
+    <h3 style="margin:20px 0 12px">特征服务架构</h3>
+    <pre><code><span class="cm">特征更新链路:</span>
+
+<span class="ty">离线特征</span> (天级):  Spark → Hive → Redis Bulk Load
+<span class="ty">近线特征</span> (分钟级): Flink → Kafka → Redis Streaming
+<span class="ty">实时特征</span> (请求级): 请求参数直接解析 (时间/位置/设备)
+
+<span class="cm">Feature Store 设计:</span>
+  Key:   user_id / item_id / cross_key
+  Value: Protobuf 序列化的特征向量
+  TTL:   user=24h, item=1h, realtime=session
+  SLA:   p99 < 3ms (Redis Cluster)</code></pre>
+  </div>
+</section>
+
+<!-- ==================== MONITORING ==================== -->
+<section id="monitoring">
+  <span class="section-tag" style="background:var(--monitor)">Monitoring 监控与校准</span>
+  <div class="card">
+    <h3 style="margin-bottom:16px">模型监控体系</h3>
+    <div class="insight">
+      模型上线后最重要的事情是持续监控。模型衰减 (Model Degradation) 是必然的——用户行为变化、新广告上线、季节性波动都会导致模型效果下降。
+    </div>
+
+    <h3 style="margin:20px 0 12px">核心监控指标</h3>
+    <table>
+      <thead><tr><th>指标</th><th>含义</th><th>报警阈值</th><th>处理方式</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>AUC</strong></td>
+          <td>排序能力 (越高越好)</td>
+          <td>日环比下降 > 0.5%</td>
+          <td>检查数据管道 → 重训模型</td>
+        </tr>
+        <tr>
+          <td><strong>PCOC</strong></td>
+          <td>预估/实际转化率比值</td>
+          <td>偏离 1.0 超过 5%</td>
+          <td>触发在线校准 (Platt Scaling)</td>
+        </tr>
+        <tr>
+          <td><strong>GAUC</strong></td>
+          <td>分用户 AUC 加权平均</td>
+          <td>日环比下降 > 0.3%</td>
+          <td>检查用户侧特征漂移</td>
+        </tr>
+        <tr>
+          <td><strong>Log Loss</strong></td>
+          <td>概率校准质量</td>
+          <td>上升 > 2%</td>
+          <td>全链路校准检查</td>
+        </tr>
+        <tr>
+          <td><strong>特征覆盖率</strong></td>
+          <td>特征缺失比例</td>
+          <td>某特征缺失 > 10%</td>
+          <td>检查数据源 / Feature Store</td>
+        </tr>
+        <tr>
+          <td><strong>推理延迟</strong></td>
+          <td>模型 p99 延迟</td>
+          <td>超过 SLA 的 80%</td>
+          <td>扩容 GPU / 启用降级</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:20px 0 12px">校准 (Calibration) 详解</h3>
+    <div class="grid-2">
+      <div class="mini-card">
+        <h4 style="color:var(--monitor)">Platt Scaling</h4>
+        <p>学习两个参数 a, b：\(p_{cal} = \sigma(a \cdot logit + b)\)<br>在验证集上拟合。简单有效，适合全局校准。</p>
+      </div>
+      <div class="mini-card">
+        <h4 style="color:var(--monitor)">Isotonic Regression</h4>
+        <p>非参数校准，学习保序映射函数。适合模型输出分布不均匀的场景。无需假设函数形式。</p>
+      </div>
+    </div>
+    <div class="mini-card" style="margin-top:16px">
+      <h4 style="color:var(--monitor)">Field-Aware Calibration</h4>
+      <p>按特定维度 (广告主、类目、时段) 分别校准。例如：电商广告和游戏广告的 CVR 分布差异很大，全局校准不够，需要分域校准。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== MODELS MAP ==================== -->
+<section id="models-map">
+  <div class="card">
+    <h3 style="margin-bottom:16px">模型在系统中的位置映射</h3>
+    <p style="color:var(--text2);font-size:14px;margin-bottom:20px">我们学习的每个模型都有其在系统中的具体位置和作用：</p>
+
+    <div class="svg-container">
+      <svg viewBox="0 0 750 340" width="750">
+        <!-- Pipeline boxes -->
+        <rect x="20" y="20" width="130" height="130" rx="8" fill="#e8f5e9" stroke="#00b894" stroke-width="2"/>
+        <text x="85" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#00b894">召回层</text>
+
+        <rect x="170" y="20" width="130" height="130" rx="8" fill="#fff3e0" stroke="#e17055" stroke-width="2"/>
+        <text x="235" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#e17055">粗排层</text>
+
+        <rect x="320" y="20" width="240" height="130" rx="8" fill="#fce4ec" stroke="#d63031" stroke-width="2"/>
+        <text x="440" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#d63031">精排层 (主战场)</text>
+
+        <rect x="580" y="20" width="150" height="130" rx="8" fill="#f3f0ff" stroke="#6c5ce7" stroke-width="2"/>
+        <text x="655" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#6c5ce7">重排层</text>
+
+        <!-- Recall models -->
+        <rect x="35" y="55" width="100" height="24" rx="4" fill="#00b894"/>
+        <text x="85" y="72" text-anchor="middle" font-size="10" fill="#fff">双塔 DNN</text>
+        <rect x="35" y="85" width="100" height="24" rx="4" fill="#fff" stroke="#00b894"/>
+        <text x="85" y="102" text-anchor="middle" font-size="10" fill="#00b894">FM (简化版)</text>
+        <rect x="35" y="115" width="100" height="24" rx="4" fill="#fff" stroke="#00b894"/>
+        <text x="85" y="132" text-anchor="middle" font-size="10" fill="#00b894">ANN 检索</text>
+
+        <!-- Coarse models -->
+        <rect x="180" y="55" width="110" height="24" rx="4" fill="#e17055"/>
+        <text x="235" y="72" text-anchor="middle" font-size="10" fill="#fff">轻量 DeepFM</text>
+        <rect x="180" y="85" width="110" height="24" rx="4" fill="#fff" stroke="#e17055"/>
+        <text x="235" y="102" text-anchor="middle" font-size="10" fill="#e17055">蒸馏模型</text>
+        <rect x="180" y="115" width="110" height="24" rx="4" fill="#fff" stroke="#e17055"/>
+        <text x="235" y="132" text-anchor="middle" font-size="10" fill="#e17055">浅层 DCN</text>
+
+        <!-- Fine rank models -->
+        <rect x="330" y="55" width="70" height="24" rx="4" fill="#d63031"/>
+        <text x="365" y="72" text-anchor="middle" font-size="9" fill="#fff">DCN-V2</text>
+        <rect x="410" y="55" width="60" height="24" rx="4" fill="#d63031"/>
+        <text x="440" y="72" text-anchor="middle" font-size="9" fill="#fff">DIN</text>
+        <rect x="480" y="55" width="70" height="24" rx="4" fill="#d63031"/>
+        <text x="515" y="72" text-anchor="middle" font-size="9" fill="#fff">DeepFM</text>
+
+        <rect x="330" y="85" width="70" height="24" rx="4" fill="#d63031"/>
+        <text x="365" y="102" text-anchor="middle" font-size="9" fill="#fff">PLE</text>
+        <rect x="410" y="85" width="70" height="24" rx="4" fill="#d63031"/>
+        <text x="445" y="102" text-anchor="middle" font-size="9" fill="#fff">ESMM</text>
+        <rect x="490" y="85" width="60" height="24" rx="4" fill="#d63031"/>
+        <text x="520" y="102" text-anchor="middle" font-size="9" fill="#fff">MMOE</text>
+
+        <rect x="340" y="115" width="90" height="24" rx="4" fill="#d63031"/>
+        <text x="385" y="132" text-anchor="middle" font-size="9" fill="#fff">PEPNet</text>
+        <rect x="440" y="115" width="100" height="24" rx="4" fill="#fff" stroke="#d63031"/>
+        <text x="490" y="132" text-anchor="middle" font-size="9" fill="#d63031">CVR 校准</text>
+
+        <!-- Re-rank -->
+        <rect x="590" y="55" width="130" height="24" rx="4" fill="#6c5ce7"/>
+        <text x="655" y="72" text-anchor="middle" font-size="10" fill="#fff">多样性 (DPP)</text>
+        <rect x="590" y="85" width="130" height="24" rx="4" fill="#fff" stroke="#6c5ce7"/>
+        <text x="655" y="102" text-anchor="middle" font-size="10" fill="#6c5ce7">校准 (Platt)</text>
+        <rect x="590" y="115" width="130" height="24" rx="4" fill="#fff" stroke="#6c5ce7"/>
+        <text x="655" y="132" text-anchor="middle" font-size="10" fill="#6c5ce7">竞价 (GSP/VCG)</text>
+
+        <!-- Offline box -->
+        <rect x="20" y="180" width="710" height="140" rx="8" fill="#f8f9fa" stroke="#ddd"/>
+        <text x="40" y="205" font-size="12" font-weight="700" fill="#d63031">离线训练 & 特征工程</text>
+
+        <rect x="40" y="220" width="100" height="40" rx="6" fill="#fff" stroke="#ddd"/>
+        <text x="90" y="237" text-anchor="middle" font-size="10" font-weight="600" fill="#333">日志数据</text>
+        <text x="90" y="253" text-anchor="middle" font-size="9" fill="#888">曝光/点击/转化</text>
+
+        <rect x="170" y="220" width="120" height="40" rx="6" fill="#fff" stroke="#ddd"/>
+        <text x="230" y="237" text-anchor="middle" font-size="10" font-weight="600" fill="#333">特征工程</text>
+        <text x="230" y="253" text-anchor="middle" font-size="9" fill="#888">Spark + Flink</text>
+
+        <rect x="320" y="220" width="140" height="40" rx="6" fill="#fff" stroke="#6c5ce7"/>
+        <text x="390" y="237" text-anchor="middle" font-size="10" font-weight="600" fill="#6c5ce7">模型训练 (GPU)</text>
+        <text x="390" y="253" text-anchor="middle" font-size="9" fill="#888">T+1 全量 + 实时增量</text>
+
+        <rect x="490" y="220" width="120" height="40" rx="6" fill="#fff" stroke="#00b894"/>
+        <text x="550" y="237" text-anchor="middle" font-size="10" font-weight="600" fill="#00b894">离线评估</text>
+        <text x="550" y="253" text-anchor="middle" font-size="9" fill="#888">AUC > 门槛 → 上线</text>
+
+        <rect x="640" y="220" width="80" height="40" rx="6" fill="#0984e3"/>
+        <text x="680" y="237" text-anchor="middle" font-size="10" font-weight="600" fill="#fff">A/B Test</text>
+        <text x="680" y="253" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.8)">灰度发布</text>
+
+        <!-- Arrows -->
+        <line x1="140" y1="240" x2="170" y2="240" stroke="#555" stroke-width="1" marker-end="url(#arr)"/>
+        <line x1="290" y1="240" x2="320" y2="240" stroke="#555" stroke-width="1" marker-end="url(#arr)"/>
+        <line x1="460" y1="240" x2="490" y2="240" stroke="#555" stroke-width="1" marker-end="url(#arr)"/>
+        <line x1="610" y1="240" x2="640" y2="240" stroke="#555" stroke-width="1" marker-end="url(#arr)"/>
+
+        <!-- CVR special section -->
+        <rect x="40" y="275" width="680" height="32" rx="4" fill="#fce4ec" stroke="#d63031" stroke-dasharray="3"/>
+        <text x="380" y="296" text-anchor="middle" font-size="10" fill="#d63031">CVR 专项处理: 延迟转化 (DFM/ESDF 等待窗口) → 样本偏差 (ESMM 全空间) → 校准 (Field-Aware Platt) → 归因 (Last-click/Shapley)</text>
+      </svg>
+    </div>
+
+    <h3 style="margin:24px 0 12px">各模型在系统中的角色</h3>
+    <table>
+      <thead><tr><th>模型</th><th>系统位置</th><th>具体作用</th></tr></thead>
+      <tbody>
+        <tr><td><strong>FM</strong></td><td>召回 (简化版) / 粗排</td><td>轻量特征交互，作为 baseline 或轻量排序</td></tr>
+        <tr><td><strong>Wide & Deep</strong></td><td>精排 (早期)</td><td>开创性框架，现多被 DeepFM/DCN 替代</td></tr>
+        <tr><td><strong>DeepFM</strong></td><td>粗排 / 精排</td><td>端到端特征交互，粗排常用其轻量版</td></tr>
+        <tr><td><strong>DCN-V2</strong></td><td>精排 (骨干网络)</td><td>Cross Network 提供显式高阶交叉能力</td></tr>
+        <tr><td><strong>DIN</strong></td><td>精排 (行为建模)</td><td>用户行为序列的注意力加权</td></tr>
+        <tr><td><strong>MMOE / PLE</strong></td><td>精排 (多任务框架)</td><td>CTR/CVR/时长等多目标联合优化</td></tr>
+        <tr><td><strong>ESMM</strong></td><td>精排 (CVR 子任务)</td><td>全空间训练消除 CVR 样本选择偏差</td></tr>
+        <tr><td><strong>PEPNet</strong></td><td>精排 (个性化层)</td><td>参数级个性化，提升多场景效果</td></tr>
+        <tr><td><strong>Platt/Isotonic</strong></td><td>重排 (校准)</td><td>将 pCTR/pCVR 校准为真实概率</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ],
+    throwOnError: false
+  });
+  initNav();
+});
+
+function initNav() {
+  const sections = document.querySelectorAll('section[id]');
+  const links = document.querySelectorAll('.topnav a');
+  window.addEventListener('scroll', function() {
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY >= s.offsetTop - 80) current = s.id;
+    });
+    links.forEach(l => {
+      l.classList.remove('active');
+      if (l.getAttribute('href') === '#' + current) l.classList.add('active');
+    });
+  });
+}
+
+function switchTab(tabEl, contentId) {
+  const card = tabEl.closest('.card');
+  card.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  card.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  tabEl.classList.add('active');
+  document.getElementById(contentId).classList.add('active');
+}
+
+function scrollTo(id) {
+  document.getElementById(id).scrollIntoView({behavior:'smooth', block:'start'});
+}
+</script>
+</body>
+</html>

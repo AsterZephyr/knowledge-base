@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Base — Interactive Learning Guides</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px}
+.container{max-width:640px;width:100%}
+h1{font-size:28px;font-weight:800;margin-bottom:8px}
+p.sub{color:#666;font-size:14px;margin-bottom:32px}
+.section{margin-bottom:24px}
+.section h2{font-size:13px;text-transform:uppercase;letter-spacing:1.5px;color:#888;margin-bottom:12px}
+.card{display:block;background:#fff;border-radius:12px;padding:20px 24px;margin-bottom:12px;border:1px solid #e0e0e0;text-decoration:none;color:inherit;transition:all .15s}
+.card:hover{border-color:#0984e3;box-shadow:0 4px 12px rgba(9,132,227,.1);transform:translateY(-2px)}
+.card h3{font-size:16px;font-weight:600;margin-bottom:4px}
+.card p{font-size:13px;color:#666}
+.tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:3px;color:#fff;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Knowledge Base</h1>
+  <p class="sub">Interactive HTML learning guides — ad algorithms, system architecture, and more.</p>
+
+  <div class="section">
+    <h2>Recommendation / Ad-Tech</h2>
+    <a class="card" href="recsys/models-learning.html">
+      <h3>广告算法模型演进学习指南</h3>
+      <p>FM → Wide&Deep → DeepFM → DIN → MMOE/PLE/ESMM → PEPNet → DCN — 交互式 SVG 架构图、公式、代码</p>
+      <div style="margin-top:8px">
+        <span class="tag" style="background:#0984e3">CTR</span>
+        <span class="tag" style="background:#6c5ce7">CVR</span>
+        <span class="tag" style="background:#e17055">Deep Learning</span>
+      </div>
+    </a>
+    <a class="card" href="recsys/system-architecture.html">
+      <h3>广告推荐系统架构全景</h3>
+      <p>召回 → 粗排 → 精排 → 重排 → 在线服务 → 离线训练 → 监控校准 完整 Pipeline</p>
+      <div style="margin-top:8px">
+        <span class="tag" style="background:#00b894">System Design</span>
+        <span class="tag" style="background:#d63031">Pipeline</span>
+      </div>
+    </a>
+  </div>
+</div>
+</body>
+</html>
